@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Camera is required for live detection / evidence capture. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+
+    <!-- Microphone for on-device push-to-talk speech input (EXTRA_PREFER_OFFLINE). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- NO INTERNET permission. Electric Lens is fully offline / on-device. -->
+
+    <!-- Android 11+ package visibility for the on-device speech recognizer. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ElectricLens">
+
+        <!--
+            Android 12+ (API 31+) restricts apps to NDK + declared vendor native
+            libraries. The QNN HTP backend dlopens the device fastRPC clients to
+            reach the Hexagon DSP; without these declarations the linker refuses
+            to load them and DSP transport fails with err 4000. (Matches
+            Qualcomm's ai-hub-apps ChatApp manifest.)
+        -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+        <uses-native-library android:name="libadsprpc.so" android:required="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.ElectricLens">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- FileProvider for sharing the generated LOTO permit PDF. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.electriclens.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

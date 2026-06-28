@@ -1,0 +1,46 @@
+# ---- Build outputs ----
+**/build/
+**/.gradle/
+**/.cxx/
+**/.externalNativeBuild/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ---- Large model files (sideloaded to device; exceed GitHub 100MB limit) ----
+Electric-lens/Model/
+**/models/
+**/*.pte
+**/*.raw
+
+# ---- Prebuilt native libs (QNN/ExecuTorch, large + vendor-redistributed) ----
+**/jniLibs/**/*.so
+**/*.so
+
+# ---- Vendored third-party clone (PyTorch ExecuTorch — clone separately) ----
+executorch/
+
+# ---- Build/inspection artifacts & abandoned scaffolding ----
+_aar_inspect/
+_qnn_aar/
+relaysight-android/
+_*.log
+_*.sh
+
+# ---- Android Studio / Gradle local ----
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+
+# ---- Editor / OS / agent local ----
+.claude/
+.DS_Store
+Thumbs.db
+
+# Root-level scratch screenshots
+/s*.png
+/shot*.png
+/ui.xml

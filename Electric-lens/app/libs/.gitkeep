@@ -1,0 +1,2 @@
+# Placeholder so the fileTree("libs") dependency resolves when no AAR/JAR is present.
+# Drop the ExecuTorch .aar (and any companion .jar) here later.
