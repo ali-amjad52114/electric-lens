@@ -40,19 +40,29 @@ class QnnSplitVlmEngine(
     private val cacheDir: File
 ) : VlmEngine {
 
-    @Volatile
-    private var runner: QnnMultimodalRunner? = null
-
     override val ready: Boolean
         get() = visionEncoderPath != null && File(visionEncoderPath).exists() &&
             tokEmbeddingPath != null && File(tokEmbeddingPath).exists() &&
             File(decoderPath).exists() &&
             File(tokenizerPath).exists()
 
+    /**
+     * Run ONE inference on a freshly-constructed runner.
+     *
+     * The native QNN multimodal runner accumulates its KV-cache position
+     * (`cur_pos_`) across generate() calls (it's a multi-turn design) and never
+     * resets it, so the 3rd independent inference trips an ET_CHECK and aborts the
+     * process. We use the runner for INDEPENDENT captures, so we build a new
+     * runner per call (cur_pos_ starts at 0). The QNN HTP context is created and
+     * torn down per inference anyway, so this does not change the warm-vs-cold cost
+     * materially. Constructed under @Synchronized so concurrent captures serialize.
+     */
     @Synchronized
-    private fun obtainRunner(): QnnMultimodalRunner {
-        runner?.let { return it }
-        Log.i(TAG, "Constructing QnnMultimodalRunner (loading 3 .pte on NPU)…")
+    override fun generate(bitmap: Bitmap, prompt: String): String {
+        val rawPath = writeNormalizedRaw(bitmap)
+        // seq_len = prompt(+image tokens) + output budget, well within 4096 ctx.
+        val seqLen = (config.maxNewTokens + 192).coerceAtMost(1024)
+        Log.i(TAG, "Constructing fresh QnnMultimodalRunner for this capture…")
         val r = QnnMultimodalRunner(
             encoderPath = requireNotNull(visionEncoderPath) { "visionEncoderPath null" },
             tokEmbeddingPath = requireNotNull(tokEmbeddingPath) { "tokEmbeddingPath null" },
@@ -63,16 +73,11 @@ class QnnSplitVlmEngine(
             evalMode = 1,
             temperature = 0.0f
         )
-        runner = r
-        return r
-    }
-
-    override fun generate(bitmap: Bitmap, prompt: String): String {
-        val r = obtainRunner()
-        val rawPath = writeNormalizedRaw(bitmap)
-        // seq_len = prompt(+image tokens) + output budget, well within 4096 ctx.
-        val seqLen = (config.maxNewTokens + 192).coerceAtMost(1024)
-        return r.generate(rawPath, prompt, systemPrompt = "", seqLen = seqLen).trim()
+        return try {
+            r.generate(rawPath, prompt, systemPrompt = "", seqLen = seqLen).trim()
+        } finally {
+            runCatching { r.close() }
+        }
     }
 
     /**
@@ -127,8 +132,7 @@ class QnnSplitVlmEngine(
     }
 
     override fun close() {
-        runCatching { runner?.close() }
-        runner = null
+        // No long-lived runner is held — each generate() builds and closes its own.
     }
 
     companion object {

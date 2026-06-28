@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,7 +41,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.electriclens.ui.components.CameraPreview
 import com.electriclens.ui.components.EvidenceThumbStrip
 import com.electriclens.ui.components.PrimaryButton
+import com.electriclens.ui.components.ProgressRail
 import com.electriclens.ui.components.StepCard
+import com.electriclens.ui.components.WorkBlockedCard
 import com.electriclens.ui.components.rememberCameraCaptureController
 import com.electriclens.ui.theme.Alert
 import com.electriclens.ui.theme.BgDark
@@ -89,6 +93,9 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
     val isAnalyzing by vm.isAnalyzing.collectAsStateWithLifecycle()
     val captureFeedback by vm.captureFeedback.collectAsStateWithLifecycle()
     val lastCaptureVerified by vm.lastCaptureVerified.collectAsStateWithLifecycle()
+    val canStartLoto by vm.canStartLoto.collectAsStateWithLifecycle()
+    val sessionFaultCode by vm.sessionFaultCode.collectAsStateWithLifecycle()
+    val blockInfo by vm.blockInfo.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val controller = rememberCameraCaptureController()
@@ -124,13 +131,40 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
 
     val isPermitReady = state == AppState.PERMIT_READY
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(BgDark)
+            .statusBarsPadding()
             .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // 5-step progress rail across the top of both panes.
+        ProgressRail(
+            state = state,
+            faultRead = sessionFaultCode.isNotBlank(),
+            canStartLoto = canStartLoto,
+            blocked = blockInfo != null
+        )
+
+        // Blocked → large full-width WORK BLOCKED card across both panes.
+        // Recapture grabs a FRESH live camera frame and runs a new inference (same
+        // as "Capture evidence"); the next capture clears the block. Use the
+        // separate "Upload evidence" button to pick a staged image instead.
+        blockInfo?.let { block ->
+            WorkBlockedCard(
+                block = block,
+                onRecapture = { controller.capture()?.let { vm.captureEvidence(it) } },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // --- Left/center pane: live work area ---
         Column(
             modifier = Modifier
@@ -183,8 +217,11 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
             // Captured-evidence thumbnails.
             EvidenceThumbStrip(items = evidence, modifier = Modifier.fillMaxWidth())
 
-            // Verdict chip for the last capture: green ✓ / red ✗ / nothing.
-            VerdictChip(verified = lastCaptureVerified, feedback = captureFeedback)
+            // Green "Verified" chip for a successful capture. (The WORK BLOCKED
+            // card is rendered full-width above the panes when blockInfo != null.)
+            if (blockInfo == null) {
+                VerdictChip(verified = lastCaptureVerified, feedback = captureFeedback)
+            }
 
             Spacer(Modifier.weight(1f))
 
@@ -192,13 +229,15 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
             if (isPermitReady) {
                 PrimaryButton(
                     text = "Generate Permit PDF",
-                    onClick = { vm.generatePermit(context) }
+                    onClick = { vm.generatePermit(context) },
+                    modifier = Modifier.navigationBarsPadding()
                 )
             } else if (isAnalyzing) {
                 // Inference in flight — disable input and show progress.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
                         .background(PanelDark, RoundedCornerShape(12.dp))
                         .padding(vertical = 16.dp),
                     horizontalArrangement = Arrangement.Center,
@@ -219,7 +258,9 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
                 }
             } else {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     PrimaryButton(
@@ -274,13 +315,16 @@ fun GuidedLockoutScreen(vm: SessionViewModel, tts: TtsManager) {
                 }
             }
         }
+        }
     }
 }
 
 /**
- * Per-capture verdict chip:
+ * Per-capture verdict chip. When the step is BLOCKED (identity mismatch /
+ * unverified) the caller shows the large [WorkBlockedCard] instead of this chip;
+ * this chip is only used for the non-blocked verdicts:
  *  - [verified] == true  → green ✓ "Verified"
- *  - [verified] == false → red ✗ + the VLM [feedback] text (prompts recapture)
+ *  - [verified] == false → red ✗ + the VLM [feedback] text (plain recapture hint)
  *  - [verified] == null  → render nothing
  */
 @Composable

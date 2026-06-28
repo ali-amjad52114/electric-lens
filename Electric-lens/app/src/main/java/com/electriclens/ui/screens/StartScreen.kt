@@ -57,6 +57,7 @@ fun StartScreen(vm: SessionViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .background(BgDark)
+            .navigationBarsPadding()
             .padding(horizontal = 28.dp, vertical = 32.dp),
         contentAlignment = Alignment.Center
     ) {

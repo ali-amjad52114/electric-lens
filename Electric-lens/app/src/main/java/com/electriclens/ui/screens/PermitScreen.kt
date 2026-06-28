@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,6 +58,7 @@ fun PermitScreen(vm: SessionViewModel) {
     val context = LocalContext.current
     val evidence by vm.evidence.collectAsStateWithLifecycle()
     val sessionFaultCode by vm.sessionFaultCode.collectAsStateWithLifecycle()
+    val lastResult by vm.lastResult.collectAsStateWithLifecycle()
 
     // Generate the PDF exactly once when this screen is first shown.
     var permitFile by remember { mutableStateOf<File?>(null) }
@@ -109,6 +111,9 @@ fun PermitScreen(vm: SessionViewModel) {
             },
             faultType = manual.faultType,
             isolationPoints = asset.isolationPoints.joinToString(", "),
+            readProof = lastResult?.let {
+                "${it.source} · NPU ${it.runtimeMs}ms · confidence ${"%.2f".format(it.confidence)}"
+            },
             evidence = evidence,
             timeFormat = timeFormat
         )
@@ -185,7 +190,8 @@ fun PermitScreen(vm: SessionViewModel) {
 
         PrimaryButton(
             text = "Reset Demo",
-            onClick = { vm.reset() }
+            onClick = { vm.reset() },
+            modifier = Modifier.navigationBarsPadding()
         )
 
         Spacer(Modifier.height(8.dp))
@@ -200,6 +206,7 @@ private fun SummaryCard(
     faultLine: String,
     faultType: String,
     isolationPoints: String,
+    readProof: String?,
     evidence: List<EvidenceItem>,
     timeFormat: SimpleDateFormat
 ) {
@@ -223,6 +230,7 @@ private fun SummaryCard(
         DetailRow("Fault", faultLine)
         DetailRow("Fault type", faultType)
         DetailRow("Isolation points", isolationPoints)
+        readProof?.let { DetailRow("Read by", it) }
 
         Spacer(Modifier.height(2.dp))
         Text(

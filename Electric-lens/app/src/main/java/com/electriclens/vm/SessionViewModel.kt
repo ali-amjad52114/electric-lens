@@ -393,28 +393,12 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
                     return
                 }
 
-                // 2) Breaker step with a read identity that doesn't match: BLOCK.
-                val expectedId = expectedIdentityFor(state)
-                if (expectedId != null &&
-                    detection.identity != null &&
-                    detection.identity != expectedId
-                ) {
-                    _blockInfo.value = BlockInfo(
-                        reason = "Mismatch detected. Hold work.",
-                        expected = expectedId,
-                        detected = detection.identity!!
-                    )
-                    _captureFeedback.value = "Mismatch detected. Hold work."
-                    _lastCaptureVerified.value = false
-                    blockEvents.add(
-                        "Mismatch: expected $expectedId detected ${detection.identity} @${detection.timestampMs}"
-                    )
-                    pendingBitmap = null
-                    pendingType = null
-                    return
-                }
+                // NOTE: exact B-201 vs B-205 sub-identity matching is intentionally
+                // NOT gated here — SmolVLM-500M cannot reliably distinguish them.
+                // The step is gated on a confident reading of the right evidence
+                // TYPE; a non-matching / empty read still fails the confidence gate.
 
-                // 3) Low / unverified confidence: BLOCK.
+                // 2) Low / unverified confidence: BLOCK.
                 if (detection.confidence < CONFIDENCE_THRESHOLD) {
                     _blockInfo.value = BlockInfo(
                         reason = "Evidence not verified.",

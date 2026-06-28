@@ -67,30 +67,54 @@ object NpuSelfTest {
                 Log.i(TAG, "OUTPUT>>> $out")
                 runner.close()
 
-                // ---- Phase 2: full PRODUCTION path (camera-equivalent) -------
-                // Decode a real PNG -> Bitmap and run it through the exact engine
-                // the live capture uses: VlmEngineFactory -> QnnSplitVlmEngine
-                // (bitmap preprocessing) -> NPU -> VlmModelAdapter fault parse.
-                val png = File(context.filesDir, "m/vfd_test.png")
-                if (png.exists()) {
-                    Log.i(TAG, "=== PRODUCTION ENGINE TEST (real Bitmap) ===")
-                    val bmp = BitmapFactory.decodeFile(png.absolutePath)
-                    Log.i(TAG, "decoded bitmap ${bmp.width}x${bmp.height}")
-                    val cfg = VlmConfigs.SMOLVLM
-                    val engine = VlmEngineFactory.create(context, cfg)
-                    Log.i(TAG, "engine ready=${engine.ready}")
-                    val adapter = VlmModelAdapter(cfg)
-                    val faultPrompt = adapter.promptFor(DetectionType.FAULT_CODE)
+                // ---- Phase 2+3: ONE warm engine (mirrors the real app) over the
+                // fault read + all 4 LOTO label reads. Logs raw + parsed for each.
+                val cfg = VlmConfigs.SMOLVLM
+                val adapter = VlmModelAdapter(cfg)
+                val engine = VlmEngineFactory.create(context, cfg)
+                Log.i(TAG, "=== PRODUCTION ENGINE TEST (one warm engine) ready=${engine.ready} ===")
+                val reads = listOf(
+                    DetectionType.FAULT_CODE to "vfd_test.png",
+                    DetectionType.BREAKER_B201_OFF to "breaker_b201_off.png",
+                    DetectionType.BREAKER_B205_OFF to "breaker_b205_off.png",
+                    DetectionType.LOCK_TAG to "lock_tag.png",
+                    DetectionType.MCC_OPEN to "mcc_open.png"
+                )
+                for ((type, fname) in reads) {
+                    val f = File(context.filesDir, "m/$fname")
+                    if (!f.exists()) { Log.w(TAG, "$fname missing"); continue }
+                    val bmp = BitmapFactory.decodeFile(f.absolutePath)
                     val tp = System.currentTimeMillis()
-                    val answer = engine.generate(bmp, faultPrompt)
-                    Log.i(TAG, "PROD answer (${System.currentTimeMillis() - tp}ms): $answer")
-                    val code = adapter.extractFaultCode(answer)
-                    val det = adapter.evaluate(DetectionType.FAULT_CODE, answer, System.currentTimeMillis())
-                    Log.i(TAG, "PROD extracted code=$code detection=$det")
-                    engine.close()
-                } else {
-                    Log.w(TAG, "vfd_test.png not present; skipping production engine test")
+                    val ans = engine.generate(bmp, adapter.promptFor(type))
+                    val ms = System.currentTimeMillis() - tp
+                    val det = adapter.evaluate(type, ans, System.currentTimeMillis())
+                    Log.i(TAG, "READ $type (${ms}ms) raw>>> $ans")
+                    Log.i(TAG, "READ $type parsed: conf=${det.confidence} identity=${det.identity} code=${det.code} PASS=${det.confidence >= 0.70f}")
                 }
+                // ---- Phase 4: REAL-PHOTO BREAKER PROBE ----------------------
+                // Run the EXACT breaker prompt on real breaker photographs placed
+                // in files/m/probe/. This tests whether the VLM analyses physical
+                // handle state on real images — vs just reading the synthetic cards.
+                val probeDir = File(context.filesDir, "m/probe")
+                val probeFiles = probeDir.listFiles()
+                    ?.filter { it.isFile && (it.name.endsWith(".jpg") || it.name.endsWith(".png")) }
+                    ?.sortedBy { it.name }
+                    ?: emptyList()
+                Log.i(TAG, "=== REAL-PHOTO BREAKER PROBE (${probeFiles.size} images) ===")
+                val breakerPrompt = adapter.promptFor(DetectionType.BREAKER_B201_OFF)
+                Log.i(TAG, "PROBE prompt>>> $breakerPrompt")
+                for (f in probeFiles) {
+                    val bmp = BitmapFactory.decodeFile(f.absolutePath)
+                    if (bmp == null) { Log.w(TAG, "PROBE ${f.name}: decode failed"); continue }
+                    val tp = System.currentTimeMillis()
+                    val ans = engine.generate(bmp, breakerPrompt)
+                    val ms = System.currentTimeMillis() - tp
+                    val det = adapter.evaluate(DetectionType.BREAKER_B201_OFF, ans, System.currentTimeMillis())
+                    Log.i(TAG, "PROBE ${f.name} (${ms}ms) raw>>> $ans")
+                    Log.i(TAG, "PROBE ${f.name} verdict: conf=${det.confidence} -> ${if (det.confidence >= 0.70f) "SAYS OFF (pass)" else "not-off / unverified"}")
+                }
+
+                engine.close()
 
                 Log.i(TAG, "=== NPU self-test DONE ===")
             } catch (t: Throwable) {

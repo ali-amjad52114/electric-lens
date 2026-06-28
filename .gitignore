@@ -44,3 +44,8 @@ Thumbs.db
 /s*.png
 /shot*.png
 /ui.xml
+
+# Local demo/test image scratch (not source)
+app-demo-images/
+breaker_test/
+/a[0-9]*.png

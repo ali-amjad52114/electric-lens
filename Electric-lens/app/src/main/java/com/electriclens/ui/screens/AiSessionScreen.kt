@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,8 +48,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.electriclens.detection.VlmModelState
 import com.electriclens.ui.components.ConversationPanel
+import com.electriclens.ui.components.EvidenceCard
 import com.electriclens.ui.components.LiveBadge
 import com.electriclens.ui.components.PrimaryButton
+import com.electriclens.ui.components.ProgressRail
+import com.electriclens.ui.components.WorkBlockedCard
 import com.electriclens.ui.theme.Alert
 import com.electriclens.ui.theme.BgDark
 import com.electriclens.ui.theme.Caution
@@ -88,6 +93,10 @@ fun AiSessionScreen(
     val faultImage by vm.faultImage.collectAsStateWithLifecycle()
     val isListening by vm.isListening.collectAsStateWithLifecycle()
     val canStartLoto by vm.canStartLoto.collectAsStateWithLifecycle()
+    val state by vm.state.collectAsStateWithLifecycle()
+    val sessionFaultCode by vm.sessionFaultCode.collectAsStateWithLifecycle()
+    val lastResult by vm.lastResult.collectAsStateWithLifecycle()
+    val blockInfo by vm.blockInfo.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
 
@@ -120,37 +129,50 @@ fun AiSessionScreen(
             .fillMaxSize()
             .background(BgDark)
     ) {
-        // Top overlay row: LIVE badge + NPU/source readout + mute toggle.
-        Row(
+        // Top overlay: 5-step progress rail + status row (LIVE badge + NPU/source
+        // readout + mute toggle).
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
+                .statusBarsPadding()
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            ProgressRail(
+                state = state,
+                faultRead = sessionFaultCode.isNotBlank(),
+                canStartLoto = canStartLoto,
+                blocked = blockInfo != null
+            )
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                LiveBadge()
-                NpuReadout(latencyMs = latencyMs)
-                SourceIndicator(useMock = useMock, modelState = modelState)
-            }
-            IconButton(
-                onClick = {
-                    vm.toggleMute()
-                    tts.setMuted(!isMuted)
-                },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = PanelDark.copy(alpha = 0.85f),
-                    contentColor = TextLight
-                )
-            ) {
-                Icon(
-                    imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                    contentDescription = if (isMuted) "Unmute" else "Mute"
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LiveBadge()
+                    NpuReadout(latencyMs = latencyMs)
+                    SourceIndicator(useMock = useMock, modelState = modelState)
+                }
+                IconButton(
+                    onClick = {
+                        vm.toggleMute()
+                        tts.setMuted(!isMuted)
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = PanelDark.copy(alpha = 0.85f),
+                        contentColor = TextLight
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                        contentDescription = if (isMuted) "Unmute" else "Mute"
+                    )
+                }
             }
         }
 
@@ -169,10 +191,28 @@ fun AiSessionScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Real AI proof of the last on-device read (confidence visible).
+            lastResult?.let { result ->
+                EvidenceCard(
+                    result = result,
+                    modifier = Modifier.widthIn(max = 480.dp)
+                )
+            }
+
+            // Large red blocked card (e.g. no fault code read) — unmissable.
+            blockInfo?.let { block ->
+                WorkBlockedCard(
+                    block = block,
+                    onRecapture = { imagePicker.launch("image/*") },
+                    modifier = Modifier.widthIn(max = 480.dp)
+                )
+            }
+
             // Fault image preview thumbnail (once one has been uploaded).
             faultImage?.let { bmp ->
                 Image(
